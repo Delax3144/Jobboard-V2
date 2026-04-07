@@ -1,125 +1,133 @@
-/* CandidateAppView.tsx */
-import { Link, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import api from "../lib/api";
+import { useAuth } from "../context/AuthContext";
+import { type UserMode } from "../lib/userMode";
 
-export default function CandidateAppView({ app }: { app: any }) {
+export default function TopNav({ mode, setMode }: { mode: UserMode; setMode: (m: UserMode) => void }) {
+  const location = useLocation();
   const navigate = useNavigate();
-  const isInvited = app.status === 'invited';
-  const isRejected = app.status === 'rejected';
+  const { user, logout, isLoading } = useAuth();
+  const [hasInvite, setHasInvite] = useState(false);
   
+  // URL бэкенда для загрузки аватарок
   const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
-  // Логика кнопки чата: показываем, если статус не "new" 
-  // (значит работодатель проявил активность)
-  const canChat = app.status !== 'new';
+  useEffect(() => {
+    if (user) {
+      setMode(user.role === 'employer' ? 'employer' : 'candidate');
+
+      const checkUpdates = () => {
+        const endpoint = user.role === 'employer' ? '/applications/owner' : '/applications/my';
+        api.get(endpoint).then((res: { data: any[] }) => {
+          const unread = res.data.some((app: any) => {
+            const lastUpdate = app.messages?.[0]?.createdAt || app.createdAt;
+            const lastViewed = user.role === 'employer' ? app.lastViewedByOwner : app.lastViewedByCandidate;
+            return lastUpdate > lastViewed || (user.role === 'candidate' && app.status === 'invited' && lastUpdate > lastViewed);
+          });
+          setHasInvite(unread);
+        });
+      };
+
+      checkUpdates();
+      const interval = setInterval(checkUpdates, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [user, setMode, location.pathname]);
+
+  useEffect(() => {
+    if (!isLoading && user && user.role === "candidate" && location.pathname.startsWith("/employer")) {
+      navigate("/", { replace: true });
+    }
+  }, [user, isLoading, location.pathname, navigate]);
 
   return (
-    <div style={{ padding: '40px 0', maxWidth: '900px', margin: '0 auto' }}>
-      <Link to="/applications" style={{ color: '#666', textDecoration: 'none', fontSize: '14px', fontWeight: 600 }}>
-        ← BACK TO MY APPLICATIONS
-      </Link>
-
-      <div style={{ marginTop: '30px', display: 'grid', gap: '30px' }}>
-        
-        {/* 1. ПАНЕЛЬ СТАТУСА (Акцентная) */}
-        <div style={{ 
-          background: isInvited ? 'linear-gradient(145deg, #064e3b, #022c22)' : (isRejected ? 'linear-gradient(145deg, #450a0a, #1a0505)' : 'linear-gradient(145deg, #0f0f0f, #050505)'), 
-          padding: '40px', 
-          borderRadius: '32px', 
-          textAlign: 'center',
-          border: isInvited ? '1px solid #10b981' : (isRejected ? '1px solid #ef4444' : '1px solid #1a1a1a'),
-          boxShadow: isInvited ? '0 0 40px rgba(16, 185, 129, 0.1)' : 'none'
-        }}>
-          <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 800, textTransform: 'uppercase', color: '#666', letterSpacing: '1px' }}>
-            Current Application Status
-          </h2>
-          <div style={{ 
-            fontSize: '42px', 
-            fontWeight: '900', 
-            color: isInvited ? '#10b981' : (isRejected ? '#ef4444' : '#fff'), 
-            marginTop: '15px',
-            letterSpacing: '-1px'
-          }}>
-            {isInvited ? 'You are Invited!' : (isRejected ? 'Declined' : 'Under Review')}
-          </div>
-          <p style={{ color: '#888', marginTop: '15px', fontSize: '16px', maxWidth: '500px', margin: '15px auto 0' }}>
-            {isInvited 
-              ? 'Great news! The employer has reviewed your application and wants to start a conversation.' 
-              : (isRejected ? 'Thank you for your interest. Unfortunately, the company decided to move forward with other candidates.' : 'Your application is currently being reviewed by the hiring team.')}
-          </p>
+    <header className="header">
+      <div className="headerInner">
+        <div className="brand">
+          <NavLink to="/" style={{ textDecoration: 'none', color: 'inherit', fontWeight: 800, fontSize: 22 }}>
+            Job<span style={{ color: '#10b981' }}>Board</span>
+          </NavLink>
         </div>
 
-        {/* 2. ИНФО О ВАКАНСИИ (С ЛОГО) */}
-        <div style={{ 
-          background: 'linear-gradient(145deg, #0f0f0f, #050505)', 
-          padding: '40px', 
-          borderRadius: '32px', 
-          border: '1px solid #1a1a1a',
-          display: 'flex',
-          gap: '30px',
-          alignItems: 'center'
-        }}>
-          <div style={{ 
-            width: '80px', height: '80px', borderRadius: '20px', 
-            background: '#000', border: '1px solid #222', display: 'flex', 
-            alignItems: 'center', justifyContent: 'center', overflow: 'hidden' 
-          }}>
-            {app.job.companyLogo ? (
-              <img src={`${apiUrl}${app.job.companyLogo}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <span style={{ fontSize: '24px', fontWeight: 800, color: '#333' }}>{app.job.companyName[0]}</span>
-            )}
-          </div>
-          <div style={{ flex: 1 }}>
-            <h3 style={{ margin: 0, fontSize: '24px', fontWeight: 800 }}>{app.job.title}</h3>
-            <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '8px' }}>
-              <span style={{ color: '#10b981', fontWeight: 700 }}>{app.job.companyName}</span>
-              <span style={{ color: '#444' }}>•</span>
-              <span style={{ color: '#666' }}>{app.job.salaryFrom} - {app.job.salaryTo} PLN</span>
-            </div>
-          </div>
-          <Link to={`/jobs/${app.job.id}`} className="btn pill" style={{ textDecoration: 'none', color: '#fff', fontSize: '13px' }}>View Offer</Link>
-        </div>
-
-        {/* 3. КОНТЕНТ: COVER LETTER И ФАЙЛЫ */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '25px' }}>
+        <nav className="nav">
+          <NavLink to="/jobs" className="navLink">All Jobs</NavLink>
           
-          {/* Сопроводительное */}
-          <div style={{ background: '#0a0a0a', padding: '30px', borderRadius: '24px', border: '1px solid #1a1a1a' }}>
-            <div style={{ fontSize: '11px', color: '#444', fontWeight: 800, textTransform: 'uppercase', marginBottom: '20px' }}>Your Motivation Letter</div>
-            <p style={{ margin: 0, color: '#aaa', lineHeight: '1.7', fontSize: '15px', fontStyle: app.coverLetter ? 'normal' : 'italic' }}>
-              {app.coverLetter ? `"${app.coverLetter}"` : "No message provided."}
-            </p>
-          </div>
+          {/* ССЫЛКИ ТОЛЬКО ДЛЯ КАНДИДАТА */}
+          {user?.role === 'candidate' && (
+            <>
+              <NavLink to="/applications" className="navLink" style={{ display: 'flex', alignItems: 'center' }}>
+                My Applications
+                {hasInvite && <span className="pulse-dot" style={{
+                  width: '8px', height: '8px', backgroundColor: '#10b981',
+                  borderRadius: '50%', marginLeft: '8px', boxShadow: '0 0 8px rgba(16, 185, 129, 0.6)'
+                }} />}
+              </NavLink>
+              <NavLink to="/saved" className="navLink">Saved Jobs</NavLink>
+            </>
+          )}
 
-          {/* Резюме и Сообщения */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-             <div style={{ background: '#0a0a0a', padding: '30px', borderRadius: '24px', border: '1px solid #1a1a1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: '11px', color: '#444', fontWeight: 800, marginBottom: '5px' }}>ATTACHED CV</div>
-                  <div style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>{app.cvUrl ? "Resume_CV.pdf" : "None"}</div>
+          {/* ССЫЛКИ ТОЛЬКО ДЛЯ РАБОТОДАТЕЛЯ */}
+          {user?.role === 'employer' && (
+            <NavLink to="/employer" className="navLink" style={{ display: 'flex', alignItems: 'center' }}>
+              Employer Console
+              {hasInvite && <span className="pulse-dot" style={{
+                width: '8px', height: '8px', backgroundColor: '#10b981',
+                borderRadius: '50%', marginLeft: '8px', boxShadow: '0 0 8px rgba(16, 185, 129, 0.6)'
+              }} />}
+            </NavLink>
+          )}
+        </nav>
+
+        <div className="actions">
+          {user ? (
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+              
+              {/* БЛОК: АВАТАР И НИКНЕЙМ */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: '32px', height: '32px', borderRadius: '50%',
+                  background: '#111', border: '1px solid #10b981', overflow: 'hidden',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  {user.avatarUrl ? (
+                    <img 
+                      src={user.avatarUrl ? (user.avatarUrl.startsWith('http') ? user.avatarUrl : `${apiUrl}${user.avatarUrl}`) : '/default-avatar.png'} 
+                      alt="avatar" 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                    />
+                  ) : (
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#10b981' }}>
+                      {user.username?.[0].toUpperCase() || user.email[0].toUpperCase()}
+                    </span>
+                  )}
                 </div>
-                {app.cvUrl && <a href={`${apiUrl}${app.cvUrl}`} target="_blank" rel="noreferrer" style={{ fontSize: '20px' }}>📄</a>}
-             </div>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>
+                  {user.username || user.email.split('@')[0]}
+                </span>
+              </div>
 
-             {/* КНОПКА ЧАТА */}
-             {canChat ? (
-               <button 
-                onClick={() => navigate(`/messages/${app.id}`)}
-                className="btn btnPrimary pill" 
-                style={{ width: '100%', padding: '20px', fontSize: '16px', fontWeight: 800, boxShadow: '0 10px 20px rgba(16, 185, 129, 0.2)' }}
-               >
-                 Open Messages 💬
-               </button>
-             ) : (
-               <div style={{ padding: '20px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '20px', border: '1px dotted #222', color: '#444', fontSize: '13px' }}>
-                 Chat will be available once the employer reviews your application
-               </div>
-             )}
-          </div>
+              {/* КНОПКА MY PROFILE */}
+              <NavLink 
+                to="/profile" 
+                className="btn pill" 
+                style={{ border: '1px solid #333', padding: '8px 20px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}
+              >
+                My Profile
+              </NavLink>
 
+              <button className="btn pill" onClick={logout} style={{ border: '1px solid #333', padding: '8px 20px' }}>
+                Logout
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 12 }}>
+              <NavLink to="/login" className="navLink">Login</NavLink>
+              <NavLink to="/register" className="btn pill btnPrimary" style={{ textDecoration: 'none' }}>Sign Up</NavLink>
+            </div>
+          )}
         </div>
-
       </div>
-    </div>
+    </header>
   );
 }
